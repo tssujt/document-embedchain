@@ -1,0 +1,15 @@
+.cache
+.venv
+venv
+**/*.py[cod]
+**/__pycache__
+
+.DS_Store
+.coverage
+.env
+
+.git
+.github
+.gitignore
+
+.vscode

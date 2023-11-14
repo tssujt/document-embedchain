@@ -9,9 +9,9 @@ from typing import Dict, List
 import streamlit as st
 from langchain.chains import LLMChain, QAGenerationChain
 from langchain.chains.question_answering import load_qa_chain
-from langchain.chat_models import ChatOpenAI
+from langchain.chat_models import AzureChatOpenAI, ChatOpenAI
 from langchain.docstore.document import Document
-from langchain.document_loaders import TextLoader, UnstructuredPDFLoader
+from langchain.document_loaders import PyMuPDFLoader, TextLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.prompts.chat import (
     ChatPromptTemplate,
@@ -19,23 +19,50 @@ from langchain.prompts.chat import (
     PromptTemplate,
     SystemMessagePromptTemplate,
 )
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.vectorstores import VectorStore
-from langchain.vectorstores.chroma import Chroma
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores.elasticsearch import ElasticsearchStore
-from langchain.vectorstores.milvus import Milvus
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
-if not (openai_api_key := os.getenv("OPENAI_API_KEY")):
+if openai_api_key := os.getenv("OPENAI_API_KEY"):
+    embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
+    llm = ChatOpenAI(
+        openai_api_key=openai_api_key,
+        model_name="gpt-3.5-turbo-16k",
+        temperature=0.1,
+        max_tokens=1024,
+        max_retries=1,
+    )
+elif os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_API_BASE"):
+    openai_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    openai_api_base = os.getenv("AZURE_OPENAI_API_BASE")
+
+    embeddings = OpenAIEmbeddings(
+        openai_api_key=openai_api_key,
+        openai_api_base=openai_api_base,
+        openai_api_type="azure",
+        openai_api_version="2023-03-15-preview",
+        deployment="text-embedding-ada-002",
+    )
+    llm = AzureChatOpenAI(
+        openai_api_key=openai_api_key,
+        openai_api_base=openai_api_base,
+        openai_api_type="azure",
+        openai_api_version="2023-03-15-preview",
+        deployment_name="gpt-35-turbo",
+        temperature=0.1,
+        max_tokens=1024,
+        max_retries=1,
+    )
+else:
     raise ValueError("OPENAI_API_KEY environment variable must be set")
 
-embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-llm = ChatOpenAI(
-    openai_api_key=openai_api_key,
-    model_name="gpt-3.5-turbo-16k",
-    temperature=0,
-    max_tokens=1000,
+
+vector_store = ElasticsearchStore(
+    index_name="embedding",
+    es_url=os.getenv("ES_URL"),
+    embedding=embeddings,
 )
+
 
 template_informed = """
 我是一个乐于助人的人工智能，能回答问题。当我不知道答案时，我会说我不知道。
@@ -50,7 +77,8 @@ qa_prompt = PromptTemplate(
 
 template_process_question = """
 I want you act as a language detector and translator.
-I will provide a question sentence in any language and a context, you will translate the question sentence in which language the context I wrote is in you. Do not write any explanations or other words, just translate the question sentence.
+I will provide a question sentence in any language and a context, you will translate the question sentence in which language the context I wrote is in you.
+Do not write any explanations or other words, just translate the question sentence.
 
 The context is:
 ```
@@ -77,54 +105,44 @@ def catchtime(event: str) -> float:
 
 
 @st.cache_data(show_spinner=False)
-def generate_qa_pairs(text: str, k: int = 1, chunk=1000) -> List[Dict[str, str]]:
-    if k < 1:
-        return []
-
-    templ1 = (
-        """您是一个智能助手，能帮助提供问题和答案。无论上下文用什么语言，问题和答案都只能是简体中文。
-给定一段上下文文本，您必须提出"""
-        + str(k)
-        + """个问题和答案对。
-在提出这个问题/答案对时，请按照以下格式回答：
+def generate_qa_pairs(text: str) -> List[Dict[str, str]]:
+    qa_generation_sys_template = """
+You are an AI assistant tasked with generating question and answer pairs for the given context using the given format.
+Only answer in the format with no other text.
+You should create the following number of question/answer pairs: 3.
+When coming up with this question/answer pair, you must respond in the following format:
 ```
 [
-  {{
-    "question": "$YOUR_QUESTION_HERE",
-    "answer": "$THE_ANSWER_HERE"
-  }},
-  {{
-    "question": "$YOUR_QUESTION_HERE",
-    "answer": "$THE_ANSWER_HERE"
-  }},
+{{
+"question": "$YOUR_QUESTION_HERE",
+"answer": "$THE_ANSWER_HERE"
+}},
+{{
+"question": "$YOUR_QUESTION_HERE",
+"answer": "$THE_ANSWER_HERE"
+}},
 ]
 ```
 
-```之间的所有内容必须是有效的 JSON。
-"""
-    )
-    templ2 = (
-        "请提供"
-        + str(k)
-        + """个问题/答案对，以指定的 JSON 格式，针对以下文本：
+Everything between the ``` must be valid JSON.
+Do not provide additional commentary and do not wrap your response in Markdown formatting. Return one-line, RAW, VALID JSON.
+"""  # noqa: E501
+    qa_generation_human_template = """请提供 3 个使用简体中文输出的问题/答案对，最终以一行 JSON 格式输出，针对以下文本：
 ----------------
-{text}"""
-    )
-    prompt = ChatPromptTemplate.from_messages(
+{text}"""  # noqa: E501
+    qa_generation_prompt = ChatPromptTemplate.from_messages(
         [
-            SystemMessagePromptTemplate.from_template(templ1),
-            HumanMessagePromptTemplate.from_template(templ2),
+            SystemMessagePromptTemplate.from_template(qa_generation_sys_template),
+            HumanMessagePromptTemplate.from_template(qa_generation_human_template),
         ]
     )
-
-    chain = QAGenerationChain.from_llm(llm, prompt=prompt)
-
-    qa = chain.run(text[:chunk])
+    chain = QAGenerationChain.from_llm(llm, prompt=qa_generation_prompt)
+    qa = chain.run(text)
     return qa[0]
 
 
 @st.cache_data(show_spinner=False)
-def process_question(text: str, question: str, chunk=1000) -> str:
+def process_question(text: str, question: str, chunk=4000) -> str:
     chain = LLMChain(llm=llm, prompt=question_process_prompt)
     return chain.run(context=text[:chunk], question=question)
 
@@ -150,11 +168,11 @@ if "doc_content" not in st.session_state:
     st.session_state.doc_content = ""
 
 
-def load_uploaded_document(vector_db: VectorStore, document: UploadedFile, docid: str):
+def load_uploaded_document(document: UploadedFile, docid: str):
     def generate_id_from_content(s: str) -> str:
-        return uuid.UUID(hashlib.sha256(s.encode()).hexdigest()[::2])
+        return str(uuid.UUID(hashlib.sha256(s.encode()).hexdigest()[::2]))
 
-    if vector_db.__class__.__name__ + docid in st.session_state.docs:
+    if docid in st.session_state.docs:
         return
 
     temp_dir = tempfile.TemporaryDirectory()
@@ -169,24 +187,23 @@ def load_uploaded_document(vector_db: VectorStore, document: UploadedFile, docid
         if file_path.endswith(".txt"):
             loader = TextLoader(file_path)
         elif file_path.endswith(".pdf"):
-            loader = UnstructuredPDFLoader(file_path)
+            loader = PyMuPDFLoader(file_path)
         else:
             st.error("Unsupported file type")
             st.stop()
 
-        documents = loader.load()
-
-        st.write("Splitting documents")
-        with catchtime("Splitting documents"):
-            text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-            docs: List[Document] = text_splitter.split_documents(documents)
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=100,
+        )
+        docs: List[Document] = loader.load_and_split(splitter)
 
         doc_content = ""
         st.write("Adding documents to vector store")
         with catchtime("Adding documents to vector store"):
             for doc in docs:
                 doc_content += doc.page_content
-                vector_db.add_texts(
+                vector_store.add_texts(
                     texts=[doc.page_content],
                     ids=[generate_id_from_content(doc.page_content)],
                     metadatas=[{"doc_id": docid}],
@@ -195,19 +212,19 @@ def load_uploaded_document(vector_db: VectorStore, document: UploadedFile, docid
 
         st.write("Generating QA pairs")
         with catchtime("Generating QA pairs"):
-            st.session_state.qa_pairs = generate_qa_pairs(doc_content, k=5)
+            st.session_state.qa_pairs = generate_qa_pairs(
+                " ".join([doc.page_content for doc in docs[:3]])
+            )
         st.session_state.chat_history = []
         st.write("Done")
 
     end = time.time()
     st.write(f"Loaded document in {end - start} seconds")
 
-    st.session_state.docs.add(vector_db.__class__.__name__ + docid)
+    st.session_state.docs.add(docid)
 
 
 with st.sidebar:
-    st.sidebar.header("Vector store settings")
-    db_type = st.sidebar.selectbox("DB Type", ("Elasticsearch", "Milvus", "Chroma"))
     uploaded_document: UploadedFile | None = st.file_uploader(
         "Choose a document", type=["pdf", "txt"]
     )
@@ -215,32 +232,12 @@ with st.sidebar:
     if uploaded_document:
         md5sum = hashlib.md5(uploaded_document.getbuffer())
         docid = md5sum.hexdigest()
+        metadata_filter = {"term": {"metadata.doc_id": docid}}
 
-        metadata_filter = {"doc_id": docid}
-        if db_type == "Elasticsearch":
-            vector_store = ElasticsearchStore(
-                index_name="embedding",
-                es_url=os.getenv("ES_URL"),
-                embedding=embeddings,
-            )
-            metadata_filter = {"term": {"metadata.doc_id": docid}}
-        elif db_type == "Milvus":
-            vector_store = Milvus(
-                embeddings, connection_args={"address": os.getenv("MILVUS_ADDRESS")}
-            )
-        elif db_type == "Chroma":
-            vector_store = Chroma(
-                embedding_function=embeddings,
-                persist_directory=os.getenv("CHROMA_PERSIST_DIRECTORY"),
-            )
-        else:
-            raise ValueError(f"Unknown db type {db_type}")
-
-        load_uploaded_document(vector_store, uploaded_document, docid)
+        load_uploaded_document(uploaded_document, docid)
 
     for qa in st.session_state.qa_pairs:
         st.write("Q: " + qa["question"])
-        st.write("A: " + qa["answer"])
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
