@@ -13,7 +13,7 @@ services:
       ES_URL: http://elasticsearch:9200
       OPENAI_API_KEY: $OPENAI_API_KEY
       AZURE_OPENAI_API_KEY: $AZURE_OPENAI_API_KEY
-      AZURE_OPENAI_API_KEY: $AZURE_OPENAI_API_KEY
+      AZURE_OPENAI_API_BASE: $AZURE_OPENAI_API_BASE
     working_dir: /app
     depends_on:
       - elasticsearch
