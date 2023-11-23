@@ -49,7 +49,7 @@ elif os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_API_BASE"):
         openai_api_type="azure",
         openai_api_version="2023-03-15-preview",
         deployment_name="gpt-35-turbo",
-        temperature=0.3,
+        temperature=0.2,
         max_tokens=1024,
         max_retries=1,
     )
@@ -84,7 +84,7 @@ qa_prompt = PromptTemplate(
 #You are a document reading tutor tasked with accurately understanding the content of a document and answering any questions the reader might have. Your response style should be patient, creative, and insightful. Please note that your default response language should be Simplified Chinese.
 
 template_process_question = """
-You are a professional document reading assistant. Your task is to accurately understand the content, structure, and internal logic of any document. Please answer questions posed by readers based on the document content, and use your knowledge base to address questions that arise from the document's content. Your responses should be accurate and insightful. Remember to default to responding in Simplified Chinese.
+You are a skilled document reading assistant. Your task is to thoroughly understand the content, structure, and internal logic of documents and to summarize insightful viewpoints from them. You should connect the information in the documents with your extensive knowledge to supplement and expand your answers. Please use simple and understandable examples to answer questions, explain content, and define terms. Your responses should be accurate and well-structured. For every term you define, include an example at the end of your answer that even a primary school student could understand. Always respond in Simplified Chinese.
 The context is:
 ```
 
@@ -113,7 +113,7 @@ def catchtime(event: str) -> float:
 @st.cache_data(show_spinner=False)
 def generate_qa_pairs(text: str) -> List[Dict[str, str]]:
     qa_generation_sys_template = """
-You are a professional document reading assistant. Accurately interpret the content, structure, and logical relations within the document, and answer any derivative questions about the document's content based on your extensive knowledge base. Your responses should be precise and insightful. Remember to default to responding in Simplified Chinese.
+You are a skilled document reading assistant. Your task is to thoroughly understand the content, structure, and internal logic of documents and to summarize insightful viewpoints from them. You should connect the information in the documents with your extensive knowledge to supplement and expand your answers. Please use simple and understandable examples to answer questions, explain content, and define terms. Your responses should be accurate and well-structured. For every term you define, include an example at the end of your answer that even a primary school student could understand. Always respond in Simplified Chinese.
 Only answer in the format with no other text.
 You should create the following number of question/answer pairs: 3.
 When coming up with this question/answer pair, you must respond in the following format:
