@@ -49,7 +49,7 @@ elif os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_API_BASE"):
         openai_api_type="azure",
         openai_api_version="2023-03-15-preview",
         deployment_name="gpt-35-turbo",
-        temperature=0.1,
+        temperature=0.3,
         max_tokens=1024,
         max_retries=1,
     )
@@ -74,14 +74,20 @@ template_informed = """
 qa_prompt = PromptTemplate(
     template=template_informed, input_variables=["context", "question"]
 )
+#I want you act as a language detector and translator.
+#You are a reading tutor for documents, capable of accurately understanding the content of documents and grasping key information. If the document includes references to other materials, you will point them out and provide a brief interpretation. You will also offer creative reading strategies and suggestions based on the reader's questions.
+#The following is a conversation with a reader, the reader is insightful, helpful,creative and detailed.
+
+#You are a Document Reading Tutor, skilled in accurately understanding the contents of documents and answering readers' questions with patience and creativity.
+#I will provide a question sentence in any language and a context, you will translate the question sentence in which language the context I wrote is in you.
+#Do not write any explanations or other words, just translate the question sentence.
+#You are a document reading tutor tasked with accurately understanding the content of a document and answering any questions the reader might have. Your response style should be patient, creative, and insightful. Please note that your default response language should be Simplified Chinese.
 
 template_process_question = """
-I want you act as a language detector and translator.
-I will provide a question sentence in any language and a context, you will translate the question sentence in which language the context I wrote is in you.
-Do not write any explanations or other words, just translate the question sentence.
-
+You are a professional document reading assistant. Your task is to accurately understand the content, structure, and internal logic of any document. Please answer questions posed by readers based on the document content, and use your knowledge base to address questions that arise from the document's content. Your responses should be accurate and insightful. Remember to default to responding in Simplified Chinese.
 The context is:
 ```
+
 {context}
 ```
 
@@ -90,7 +96,7 @@ The question sentence is:
 {question}
 ```
 
-My response for question translation using the language in the context is:
+Your response for question using in simple Chinese
 """
 question_process_prompt = PromptTemplate(
     template=template_process_question, input_variables=["context", "question"]
@@ -107,7 +113,7 @@ def catchtime(event: str) -> float:
 @st.cache_data(show_spinner=False)
 def generate_qa_pairs(text: str) -> List[Dict[str, str]]:
     qa_generation_sys_template = """
-You are an AI assistant tasked with generating question and answer pairs for the given context using the given format.
+You are a professional document reading assistant. Accurately interpret the content, structure, and logical relations within the document, and answer any derivative questions about the document's content based on your extensive knowledge base. Your responses should be precise and insightful. Remember to default to responding in Simplified Chinese.
 Only answer in the format with no other text.
 You should create the following number of question/answer pairs: 3.
 When coming up with this question/answer pair, you must respond in the following format:
@@ -142,10 +148,10 @@ Do not provide additional commentary and do not wrap your response in Markdown f
 
 
 @st.cache_data(show_spinner=False)
-def process_question(text: str, question: str, chunk=4000) -> str:
+def process_question(text: str, question: str, chunk=5000) -> str:
     chain = LLMChain(llm=llm, prompt=question_process_prompt)
     return chain.run(context=text[:chunk], question=question)
-
+#return chain.run(context=text[:chunk], question=question)
 
 st.set_page_config(
     page_title="A streamlit app for embedding documents using langchain",
@@ -193,8 +199,8 @@ def load_uploaded_document(document: UploadedFile, docid: str):
             st.stop()
 
         splitter = RecursiveCharacterTextSplitter(
-            chunk_size=500,
-            chunk_overlap=100,
+            chunk_size=600,
+            chunk_overlap=0,
         )
         docs: List[Document] = loader.load_and_split(splitter)
 
