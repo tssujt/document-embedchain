@@ -112,7 +112,6 @@ def catchtime(event: str) -> float:
 def generate_qa_pairs(text: str) -> List[Dict[str, str]]:
     qa_generation_sys_template = common_prompt +"""
 Only answer in the format with no other text.
-
 For each document, craft three pairs of questions and answers: one covering the overarching themes, another inspiring deeper insight, and the third focusing on specific details.
 When coming up with this question/answer pair, you must respond in the following format and respond in Simplified Chinese :
 ```
