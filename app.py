@@ -107,12 +107,13 @@ def catchtime(event: str) -> float:
     yield
     st.write(f"{event}: {time.time() - start:.3f} seconds")
 
-
+#You should create the following number of question/answer pairs: 3.
 @st.cache_data(show_spinner=False)
 def generate_qa_pairs(text: str) -> List[Dict[str, str]]:
     qa_generation_sys_template = common_prompt +"""
 Only answer in the format with no other text.
-You should create the following number of question/answer pairs: 3.
+
+For each document, craft three pairs of questions and answers: one covering the overarching themes, another inspiring deeper insight, and the third focusing on specific details.
 When coming up with this question/answer pair, you must respond in the following format and respond in Simplified Chinese :
 ```
 [
