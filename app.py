@@ -5,7 +5,6 @@ import time
 import uuid
 from contextlib import contextmanager
 from typing import Dict, List
-
 import streamlit as st
 from langchain.chains import LLMChain, QAGenerationChain
 from langchain.chains.question_answering import load_qa_chain
@@ -28,7 +27,7 @@ if openai_api_key := os.getenv("OPENAI_API_KEY"):
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
         model_name="gpt-3.5-turbo-16k",
-        temperature=0.1,
+        temperature=0.5,
         max_tokens=1024,
         max_retries=1,
     )
@@ -49,7 +48,7 @@ elif os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_API_BASE"):
         openai_api_type="azure",
         openai_api_version="2023-03-15-preview",
         deployment_name="gpt-35-turbo",
-        temperature=0.2,
+        temperature=0.5,
         max_tokens=1024,
         max_retries=1,
     )
@@ -62,13 +61,16 @@ vector_store = ElasticsearchStore(
     es_url=os.getenv("ES_URL"),
     embedding=embeddings,
 )
+#Assist users in extracting key information from various types of documents, ensuring a deep understanding of the document's structure while paying attention to details. When reading academic papers, organically connect to previous research, accurately interpret the paper's framework and innovations, and focus on specific details when necessary. For novels, understand how the narrative is organized, how characters are developed, and the work's significance in literary history. Answers should balance professionalism with engaging content, akin to a teacher skilled in Socratic and guided teaching methods. Provide responses that are both enlightening and illustrative with appropriate examples. Communicate in Simplified Chinese.
 
+common_prompt = """
+As a document reading assistant adept at handling a wide range of texts, your role involves accurately understanding and summarizing content, structure, and the intrinsic logical relationships within documents. When reading academic papers, you are expected to grasp the background, existing theories, prior research, design and methodology of the study, the data and findings obtained, and the sources cited for research. While reading novels, you should understand the basic structure of the story, character information and personalities, the setting in terms of time and place, societal context, the evolution of characters' fates, the core message or deeper meanings conveyed, the style of writing and language used, and the narrative perspective. In your responses, when explaining terms and concepts, always include a simple example at the end that even a primary school student could understand. If a question is beyond your scope or cannot be answered, first explain why, and then engage the reader with Socratic questioning to spark interest and encourage exploration. Answer all questions in Simplified Chinese.
+"""
 
-template_informed = """
-我是一个乐于助人的人工智能，能回答问题。当我不知道答案时，我会说我不知道。
-我了解的上下文: {context}
-当被问到: {question}
-无论问题用什么语言，回答都只能是简体中文。我的回答仅基于上下文中的信息:
+template_informed = common_prompt + """
+The context is: {context}
+The question sentence is: {question}
+Respond in Simplified Chinese.
 """
 
 qa_prompt = PromptTemplate(
@@ -83,20 +85,16 @@ qa_prompt = PromptTemplate(
 #Do not write any explanations or other words, just translate the question sentence.
 #You are a document reading tutor tasked with accurately understanding the content of a document and answering any questions the reader might have. Your response style should be patient, creative, and insightful. Please note that your default response language should be Simplified Chinese.
 
-template_process_question = """
-You are a skilled document reading assistant. Your task is to thoroughly understand the content, structure, and internal logic of documents and to summarize insightful viewpoints from them. You should connect the information in the documents with your extensive knowledge to supplement and expand your answers. Please use simple and understandable examples to answer questions, explain content, and define terms. Your responses should be accurate and well-structured. For every term you define, include an example at the end of your answer that even a primary school student could understand. Always respond in Simplified Chinese.
+template_process_question = common_prompt + """
 The context is:
 ```
-
 {context}
 ```
-
 The question sentence is:
 ```
 {question}
 ```
-
-Your response for question using in simple Chinese
+Respond in Simplified Chinese 
 """
 question_process_prompt = PromptTemplate(
     template=template_process_question, input_variables=["context", "question"]
@@ -112,11 +110,10 @@ def catchtime(event: str) -> float:
 
 @st.cache_data(show_spinner=False)
 def generate_qa_pairs(text: str) -> List[Dict[str, str]]:
-    qa_generation_sys_template = """
-You are a skilled document reading assistant. Your task is to thoroughly understand the content, structure, and internal logic of documents and to summarize insightful viewpoints from them. You should connect the information in the documents with your extensive knowledge to supplement and expand your answers. Please use simple and understandable examples to answer questions, explain content, and define terms. Your responses should be accurate and well-structured. For every term you define, include an example at the end of your answer that even a primary school student could understand. Always respond in Simplified Chinese.
+    qa_generation_sys_template = common_prompt +"""
 Only answer in the format with no other text.
 You should create the following number of question/answer pairs: 3.
-When coming up with this question/answer pair, you must respond in the following format:
+When coming up with this question/answer pair, you must respond in the following format and respond in Simplified Chinese :
 ```
 [
 {{
