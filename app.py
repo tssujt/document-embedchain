@@ -117,10 +117,12 @@ def catchtime(event: str) -> float:
 #You should create the following number of question/answer pairs: 3.
 @st.cache_data(show_spinner=False)
 def generate_qa_pairs(text: str) -> List[Dict[str, str]]:
-
+    pairs_prompt = """
+    请生成三个综合性问题/答案对，帮助读者高效地理解各种类型文档（论文、小说、新闻等）的关键内容：
+关于文档的核心内容，探究文档的结构，信息价值，分析文档的影响，这些问题将引导读者快速定位文档的关键部分，有效地提取信息，并进行深入的分析和评估。
+    """
     qa_generation_sys_template = common_prompt +"""
-Only answer in the format with no other text.
-For each document, craft three pairs of questions and answers: one covering the overarching themes, another inspiring deeper insight, and the third focusing on specific details.
+Only answer in the format with no other text."""+pairs_prompt+"""
 When coming up with this question/answer pair, you must respond in the following format and respond in Simplified Chinese :
 ```
 [
