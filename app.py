@@ -48,9 +48,11 @@ elif os.getenv("AZURE_OPENAI_API_KEY") and os.getenv("AZURE_OPENAI_API_BASE"):
         openai_api_type="azure",
         openai_api_version="2023-03-15-preview",
         deployment_name="gpt-35-turbo",
-        temperature=0.9,
+        temperature=0.7,
         max_tokens=1024,
         max_retries=1,
+        frequency_penalty=0.5,
+        presence_penalty=0
     )
 else:
     raise ValueError("OPENAI_API_KEY environment variable must be set")
@@ -64,7 +66,7 @@ vector_store = ElasticsearchStore(
 #Assist users in extracting key information from various types of documents, ensuring a deep understanding of the document's structure while paying attention to details. When reading academic papers, organically connect to previous research, accurately interpret the paper's framework and innovations, and focus on specific details when necessary. For novels, understand how the narrative is organized, how characters are developed, and the work's significance in literary history. Answers should balance professionalism with engaging content, akin to a teacher skilled in Socratic and guided teaching methods. Provide responses that are both enlightening and illustrative with appropriate examples. Communicate in Simplified Chinese.
 
 common_prompt = """
-Imagine you are a scholar, both gentle and rebelliously spirited, known for providing answers that are always accurate, comprehensive, creative, and full of personality. Your expertise lies in deeply understanding the content, structure, and inner logic of documents. When analyzing a research paper, you accurately grasp its background, previous studies, current research, proposed methods, data and findings, and the literature it's based on. Similarly, when delving into a novel, you precisely comprehend the basic structure of the story, the characters' personalities and destinies, the setting of events in time and place, the societal context, the deeper meanings conveyed, the writing and language style, and the narrative perspective. In response to 'what is' or 'what are' questions, you provide clear, accurate explanations supplemented with easy-to-understand examples, making the content accessible even to elementary school students. Likewise, when dealing with definitions, explanations, or elucidations of concepts, your explanations are clear, accurate, and accompanied by simple examples for easy comprehension. Your default language for responses is Simplified Chinese.
+Imagine you are a gentle yet untamed scholar, known for providing precise, comprehensive, creative, and personal responses. You possess a deep understanding of document content, structure, and inherent logical relationships. When reading a paper, you grasp its background, prior research, current studies, proposed methods, findings, and supporting literature. In novels, you comprehend the basic structure, character personalities, their fates, event chronology, societal context, deeper meanings, writing style, and narrative perspective. For questions starting with 'What is', 'Explain', or 'Introduce', give an accurate explanation with an example that makes it easily understandable to someone without background knowledge. When asked to define, explain, or elucidate something, provide a clear explanation with an example for easy comprehension by a layperson. Answer in Simplified Chinese unless requested otherwise.
 """
 
 common_informed_prompt = """
@@ -114,6 +116,7 @@ def catchtime(event: str) -> float:
 #You should create the following number of question/answer pairs: 3.
 @st.cache_data(show_spinner=False)
 def generate_qa_pairs(text: str) -> List[Dict[str, str]]:
+
     qa_generation_sys_template = common_prompt +"""
 Only answer in the format with no other text.
 For each document, craft three pairs of questions and answers: one covering the overarching themes, another inspiring deeper insight, and the third focusing on specific details.
@@ -130,7 +133,6 @@ When coming up with this question/answer pair, you must respond in the following
 }},
 ]
 ```
-
 Everything between the ``` must be valid JSON.
 Do not provide additional commentary and do not wrap your response in Markdown formatting. Return one-line, RAW, VALID JSON.
 """  # noqa: E501
